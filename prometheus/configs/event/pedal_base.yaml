@@ -1,0 +1,21 @@
+pedal:
+  device: /dev/input/prometheus-pedal
+  confirm_presses: 2
+  confirm_window_s: 1.0
+  debounce_s: 0.25
+  poll_timeout_s: 0.02
+  pedal_map:
+    2: 0
+    3: 1
+    4: 2
+    5: 4
+
+tty:
+  confirm_presses: 2
+  confirm_window_s: 1.0
+  debounce_s: 0.25
+  poll_timeout_s: 0.02
+  key_map:
+    a: 0
+    b: 1
+    c: 2

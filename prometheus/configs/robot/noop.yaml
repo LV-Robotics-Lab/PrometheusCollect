@@ -1,0 +1,13 @@
+_target_: prometheus.nodes.robots.noop.resolve_robot
+id: noop
+control_domain_id: 0
+sensor_domain_id: 0
+action_space: noop_action
+action_dim: 2
+sensors: {}
+streams:
+  robot_state:
+    topic: /prometheus/noop/robot_state
+    msg_type: prometheus.noop.RobotState
+    domain: robot
+    ros_domain_id: ${robot.control_domain_id}

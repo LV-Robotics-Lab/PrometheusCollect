@@ -1,0 +1,40 @@
+_target_: prometheus.nodes.robots.arx5.resolve_robot
+id: x5_1
+control_domain_id: 21
+sensor_domain_id: 22
+
+robot:
+  state_publish_hz: 120
+  action_space: abs_qpos
+  gripper_width_m: 0.082
+  gripper_open_readout: -3.4
+  left_gripper_open_readout: -3.46056
+  right_gripper_open_readout: -3.46475
+  can:
+    left: can3
+    right: can1
+
+cameras:
+  capture_hz: 30
+  capture_width: 640
+  capture_height: 480
+  publish_hz: 30
+  ir: true
+  prepub_resize: 1.0
+  serial_no:
+    base_0: "260522274589"
+    left_wrist_0: "412622272280"
+    right_wrist_0: "412622272523"
+
+tactile:
+  publish_hz: 30
+  prepub_resize: 1.0
+  publish_flow: true
+  publish_difference: false
+  publish_raw: false
+  require_gpu: true
+  serial_no:
+    left_wrist_0: "OG001263"
+    left_wrist_1: "OG001262"
+    right_wrist_0: "OG001266"
+    right_wrist_1: "OG001267"

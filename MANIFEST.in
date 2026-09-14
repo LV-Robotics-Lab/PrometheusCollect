@@ -1,0 +1,14 @@
+include README.md AGENTS.md .gitignore
+recursive-include prometheus *.py *.yaml *.sh
+recursive-include scripts *.py *.sh *.txt
+recursive-include config *.rules
+recursive-include docs *.md *.json
+recursive-include third_party/i2rt_release *.json *.patch *.md
+recursive-include tests *.py *.yaml
+global-exclude *.py[cod]
+global-exclude __pycache__
+prune outputs
+prune data
+prune .venv
+prune dist
+prune build

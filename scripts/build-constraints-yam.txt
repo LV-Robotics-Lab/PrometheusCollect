@@ -1,0 +1,2 @@
+# I2RT pins ruckig 0.15.3, whose build uses the old cmake.targets setting.
+scikit-build-core<0.10

@@ -1,0 +1,4 @@
+# Sayo CM6K four-pedal controller, keyboard interface 00.  This is the same
+# keyboard-event model used by the ARX5 pedal workflow.  Expose one stable
+# path and let members of plugdev read it without granting broad input access.
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_VENDOR_ID}=="8089", ENV{ID_MODEL_ID}=="000c", ENV{ID_USB_INTERFACE_NUM}=="00", ENV{ID_INPUT_KEYBOARD}=="1", GROUP="plugdev", MODE="0660", SYMLINK+="input/prometheus-pedal"

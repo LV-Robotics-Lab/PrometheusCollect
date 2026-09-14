@@ -1,0 +1,49 @@
+_target_: prometheus.nodes.robots.yam.resolve_robot
+id: yam
+control_domain_id: 21
+sensor_domain_id: 22
+
+robot:
+  state_publish_hz: 120
+  control_hz: 120
+  state_timeout_s: 0.5
+  action_space: abs_qpos
+  leader_arm: yam
+  follower_arm: yam_ultra_2
+  leader_gripper: yam_teaching_handle
+  follower_gripper: linear_4310
+  gripper_width_m: 0.096
+  alignment_duration_s: 3.0
+  bilateral_kp: 0.0
+  teleoperation_enabled: true
+  require_enable_button: true
+  enable_auto_recovery: false
+  # Home is captured with the `h` key while the operator has placed all four
+  # arms in a collision-free parking pose.  Only follower arms move on return.
+  home_path: ${oc.select:workflow.home_capture.path,${oc.env:PROMETHEUS_DATA_ROOT,${oc.env:HOME}/prometheus_data}/yam_home.json}
+  home_return_enabled: true
+  home_return_duration_s: 5.0
+  home_return_max_joint_delta_rad: 2.0
+  home_return_max_gripper_delta_m: 0.096
+  sim: false
+  leader_can:
+    left: can_leader_l
+    right: can_leader_r
+  follower_can:
+    left: can_follower_l
+    right: can_follower_r
+
+cameras:
+  # The three D405 cameras are connected at USB 3 SuperSpeed (5 Gbps).
+  capture_hz: 30
+  capture_width: 640
+  capture_height: 480
+  publish_hz: 30
+  collect_ir: false
+  ir: false
+  prepub_resize: 1.0
+  camera_info: false
+  serial_no:
+    base_0: "260322278344"
+    left_wrist_0: "260322279589"
+    right_wrist_0: "260322270559"

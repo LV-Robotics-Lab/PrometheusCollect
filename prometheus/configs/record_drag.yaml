@@ -1,0 +1,68 @@
+defaults:
+  - robot: yam
+  - task: default
+  - event: record_drag_pedal
+  - _self_
+
+run:
+  id: ${now:%Y%m%d_%H%M%S}
+  output_dir: outputs/record_drag/${task.id}/${run.id}
+  runtime_dir: ${run.output_dir}/runtime
+  wait_ready_timeout_s: 5.0
+
+hardware:
+  name: hardware
+  mode: owned
+  sensors: auto
+  streams: auto
+
+data:
+  name: data
+  mode: owned
+  history: 32
+  bridge:
+    enabled: true
+    name: ros_data
+    wait_all_streams: true
+    qos_depth: 10
+    stamp_source: header
+    print_camera_timestamps: false
+    print_camera_rates: false
+  numpy:
+    enabled: false
+  recording:
+    enabled: true
+    output_dir: ${run.output_dir}/episodes
+    queue_size: 4096
+    fps: 30.0
+    camera_encoder: libx265
+    default_event_value: null
+    enable_plots: true
+
+workflow:
+  max_episodes: 1
+  event_wait_timeout_s: 0.1
+  # Once all devices are ready, hide routine motor/CAN rate reports from the
+  # terminal.  Warnings and errors are still shown, as are [ready]/[record]
+  # messages.  Set false when diagnosing hardware performance.
+  quiet_hardware_logs: true
+  home_capture:
+    enabled: true
+    path: ${run.output_dir}/yam_home.json
+  home_return:
+    on_episode_stop: false
+    on_shutdown: false
+    on_manual_return: true
+    timeout_s: 15.0
+  preview:
+    enabled: true
+    host: 127.0.0.1
+    port: 7860
+    refresh_ms: 100
+  events: []
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/hydra/record_drag/${run.id}

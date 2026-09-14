@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/i2rt-robotics/i2rt.git",
+  "base_commit": "47fee5e7dec4e30ca054f798bda1c8894b465ed2",
+  "patch_sha256": "c6a4521f460607f3e16b4980e37501e694c13c4c4b395af0af10c045ed4197da",
+  "patched_files": [
+    "i2rt/motor_drivers/dm_driver.py",
+    "i2rt/robots/get_robot.py",
+    "i2rt/robots/motor_chain_robot.py",
+    "pyproject.toml",
+    "i2rt/motor_drivers/tests/test_dm_driver_shutdown.py",
+    "i2rt/robots/tests/test_drag_tuning.py",
+    "i2rt/robots/tests/test_runtime_health.py"
+  ]
+}

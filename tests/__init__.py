@@ -1,0 +1,1 @@
+"""PrometheusCollect test package."""

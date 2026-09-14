@@ -1,0 +1,71 @@
+# Hardware-free installation smoke check: writes one event-only episode.
+run:
+  id: noop_${now:%Y%m%d_%H%M%S_%f}
+  output_dir: outputs/collect_noop/${run.id}
+  runtime_dir: ${run.output_dir}/runtime
+  wait_ready_timeout_s: 1.0
+
+robot:
+  _target_: prometheus.nodes.robots.noop.resolve_robot
+  id: noop
+  action_space: noop_action
+  action_dim: 2
+  control_domain_id: 0
+  sensor_domain_id: 0
+  streams: {}
+  client:
+    _target_: prometheus.nodes.robots.noop.NoopRobotClient
+    action_space: ${robot.action_space}
+    action_dim: ${robot.action_dim}
+
+task:
+  id: installation_check
+  prompt: [installation check]
+  subtasks: []
+  metadata: {}
+
+hardware:
+  name: hardware
+  mode: owned
+  sensors: {}
+  streams: {}
+
+data:
+  name: data
+  mode: owned
+  history: 32
+  bridge:
+    enabled: false
+    name: ros_data
+    wait_all_streams: true
+    qos_depth: 10
+  recording:
+    enabled: true
+    output_dir: ${run.output_dir}/episodes
+    queue_size: 16
+    fps: 30.0
+    enable_plots: false
+
+event:
+  name: event
+  mode: owned
+  input_source: null
+
+workflow:
+  max_episodes: 1
+  event_wait_timeout_s: 0.01
+  preview:
+    enabled: false
+  events:
+    - name: record_start
+      value: true
+    - name: event_mark
+      value: true
+    - name: record_stop
+      value: true
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${run.output_dir}/hydra

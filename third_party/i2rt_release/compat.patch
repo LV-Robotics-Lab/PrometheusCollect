@@ -1,0 +1,457 @@
+--- a/i2rt/motor_drivers/dm_driver.py
++++ b/i2rt/motor_drivers/dm_driver.py
+@@ -493,6 +493,7 @@
+         self.command_lock = threading.RLock()
+ 
+         self.start_thread_flag = False
++        self._control_thread: Optional[threading.Thread] = None
+         if start_thread:
+             self.start_thread()
+ 
+@@ -555,6 +556,8 @@
+             motor_feedback.append(self.motor_interface.motor_on(motor_id, motor_type))
+         self._update_absolute_positions(motor_feedback)
+         self.state = motor_feedback
++        self._feedback_time_unix_s = time.time()
++        self._feedback_monotonic_s = time.monotonic()
+         self.running = True
+ 
+     def start_thread(self) -> None:
+@@ -562,8 +565,9 @@
+             return
+         logging.info("starting separate thread for control loop")
+         thread = threading.Thread(target=self._set_torques_and_update_state)
++        self._control_thread = thread
++        self.start_thread_flag = True
+         thread.start()
+-        self.start_thread_flag = True
+         time.sleep(0.1)
+         while self.state is None:
+             time.sleep(0.1)
+@@ -634,6 +638,8 @@
+                     with self.state_lock:
+                         self.state = motor_feedback
+                         self._update_absolute_positions(motor_feedback)
++                        self._feedback_time_unix_s = time.time()
++                        self._feedback_monotonic_s = time.monotonic()
+                     if self.same_bus_device_driver is not None:
+                         time.sleep(0.001)
+                         with self.same_bus_device_lock:
+@@ -719,8 +725,8 @@
+ 
+     def read_states(self, torques: Optional[np.ndarray] = None) -> List[MotorInfo]:
+         motor_infos = []
+-        timestamp = time.time()
+         with self.state_lock:
++            timestamp = self._feedback_time_unix_s
+             for idx in range(len(self.motor_list)):
+                 state = self.state[idx]
+                 motor_infos.append(
+@@ -737,6 +743,16 @@
+                     )
+                 )
+         return motor_infos
++
++    def get_runtime_status(self) -> Dict[str, Any]:
++        """Report CAN-loop liveness and age of actual received motor feedback."""
++        thread = self._control_thread
++        running = self.running and (not self.start_thread_flag or (thread is not None and thread.is_alive()))
++        return {
++            "running": bool(running),
++            "state_age_s": time.monotonic() - self._feedback_monotonic_s,
++            "stamp_ns": int(self._feedback_time_unix_s * 1_000_000_000),
++        }
+ 
+     def set_zero_position(self, motor_idx: int) -> None:
+         """Set a motor's current position as zero by shifting its software offset.
+@@ -777,6 +793,11 @@
+ 
+     def close(self) -> None:
+         self.running = False
++        thread = self._control_thread
++        if thread is not None and thread is not threading.current_thread():
++            thread.join()
++        self._control_thread = None
++        self.start_thread_flag = False
+         self.motor_interface.close()
+ 
+ 
+--- a/i2rt/robots/get_robot.py
++++ b/i2rt/robots/get_robot.py
+@@ -138,6 +138,13 @@
+     )
+ 
+ 
++def _arm_vector_override(value: Optional[np.ndarray | list[float]], default: np.ndarray, name: str) -> np.ndarray:
++    result = np.array(default if value is None else value, dtype=float, copy=True)
++    if result.shape != default.shape or not np.isfinite(result).all() or (result < 0).any():
++        raise ValueError(f"{name} must contain {len(default)} finite, non-negative arm-joint values")
++    return result
++
++
+ def get_yam_robot(
+     channel: str = "can0",
+     arm_type: ArmType = ArmType.YAM,
+@@ -145,7 +152,7 @@
+     zero_gravity_mode: bool = True,
+     ee_mass: Optional[float] = None,
+     ee_inertia: Optional[np.ndarray] = None,
+-    gravity_comp_factor: Optional[np.ndarray] = None,
++    gravity_comp_factor: Optional[np.ndarray | list[float]] = None,
+     gripper_limits_override: Optional[np.ndarray] = None,
+     gripper_kp: Optional[float] = None,
+     gripper_kd: Optional[float] = None,
+@@ -154,6 +161,8 @@
+     set_realtime_and_pin_callback: Optional[Callable[[int], None]] = None,
+     enable_auto_recovery: bool = False,
+     use_coulomb_friction: bool = False,
++    grav_comp_kd: Optional[np.ndarray | list[float]] = None,
++    coulomb_friction: Optional[np.ndarray | list[float]] = None,
+ ) -> "Robot":
+     """Create a YAM-family robot (real or sim).
+ 
+@@ -176,9 +185,15 @@
+         use_coulomb_friction: If True, add the per-joint Coulomb friction feedforward (from the arm
+             config) during gravity compensation. Defaults to False. Only affects real hardware; ignored
+             in sim mode (SimRobot has no friction feedforward).
++        grav_comp_kd: Optional six-joint damping override for gravity-compensation idle mode.
++            Defaults to the arm config. The gripper keeps zero idle damping. Ignored in sim mode.
++        coulomb_friction: Optional six-joint friction feedforward override in Nm. Defaults to the
++            arm config; requires use_coulomb_friction=True to take effect. Ignored in sim mode.
+     """
+     # --- Gripper-only path (no arm) -------------------------------------------
+     if arm_type == ArmType.NO_ARM:
++        if grav_comp_kd is not None or coulomb_friction is not None:
++            raise ValueError("Arm drag tuning requires an arm, not ArmType.NO_ARM")
+         return _get_gripper_only_robot(
+             channel=channel, gripper_type=gripper_type, sim=sim, enable_auto_recovery=enable_auto_recovery
+         )
+@@ -187,7 +202,9 @@
+     with_teaching_handle = gripper_type == GripperType.YAM_TEACHING_HANDLE
+ 
+     hw = _load_arm_config(arm_type)
+-    effective_gravity_comp = hw.gravity_comp_factor if gravity_comp_factor is None else gravity_comp_factor
++    effective_gravity_comp = _arm_vector_override(gravity_comp_factor, hw.gravity_comp_factor, "gravity_comp_factor")
++    grav_comp_kd = _arm_vector_override(grav_comp_kd, hw.grav_comp_kd, "grav_comp_kd")
++    coulomb_friction = _arm_vector_override(coulomb_friction, hw.coulomb_friction, "coulomb_friction")
+     if with_gripper:
+         effective_gravity_comp = np.append(effective_gravity_comp, 1.0)
+ 
+@@ -210,8 +227,6 @@
+     directions = list(hw.directions)
+     kp = hw.kp.copy()
+     kd = hw.kd.copy()
+-    grav_comp_kd = hw.grav_comp_kd.copy()
+-    coulomb_friction = hw.coulomb_friction.copy()
+     motor_offsets = [0.0] * len(motor_list)
+ 
+     if with_gripper:
+--- a/i2rt/robots/motor_chain_robot.py
++++ b/i2rt/robots/motor_chain_robot.py
+@@ -244,6 +244,7 @@
+         self._check_current_qpos_in_joint_limits()
+ 
+         self._last_motor_torques: Optional[np.ndarray] = None
++        self._last_update_monotonic_s = time.monotonic()
+         self._stop_event = threading.Event()  # Add a stop event
+         self._server_thread = threading.Thread(target=self.start_server, name="robot_server")
+         self._server_thread.start()
+@@ -422,6 +423,7 @@
+             kd=joint_commands.kd,
+         )
+         self._joint_state = self._motor_state_to_joint_state(motor_state)
++        self._last_update_monotonic_s = time.monotonic()
+ 
+         with self._mcap_lock:
+             if self._mcap_recorder is not None:
+@@ -628,7 +630,18 @@
+             if self.temp_record_flag:
+                 result["temp_mos"] = self._joint_state.temp_mos
+                 result["temp_rotor"] = self._joint_state.temp_rotor
++            result["timestamp"] = np.array([self._joint_state.timestamp])
+             return result
++
++    def get_runtime_status(self) -> Dict[str, Any]:
++        """Public health contract for applications reading cached observations."""
++        chain = self.motor_chain.get_runtime_status()
++        running = chain["running"] and self._server_thread.is_alive() and not self._stop_event.is_set()
++        return {
++            "running": bool(running),
++            "state_age_s": max(float(chain["state_age_s"]), time.monotonic() - self._last_update_monotonic_s),
++            "stamp_ns": int(chain["stamp_ns"]),
++        }
+ 
+     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+         """Exit the runtime context related to this object."""
+@@ -675,6 +688,23 @@
+         with self._command_lock:
+             self._commands = JointCommands.init_all_zero(len(self.motor_chain))
+             self._commands.kd = self._grav_comp_kd.copy()
++
++    def set_gripper_assist_torque(self, torque_nm: float) -> None:
++        """Set the additive direct-torque term for a motor-driven gripper.
++
++        ``torque_nm`` is expressed in this robot's joint-coordinate convention,
++        so a positive value assists positive measured gripper velocity even when
++        the installed gripper motor has reversed polarity.  It does not change
++        position targets or gains.  Callers must explicitly send ``0.0`` when
++        assistance is not wanted; this is intentionally a low-level primitive
++        rather than a latch or a position-holding mode.
++        """
++        if self._gripper_index is None:
++            raise RuntimeError("This robot has no motor-driven gripper")
++        if not np.isfinite(torque_nm):
++            raise ValueError("gripper assist torque must be finite")
++        with self._command_lock:
++            self._commands.torques[self._gripper_index] = float(torque_nm)
+ 
+     def start_recording(self, save_dir: str) -> bool:
+         """Start recording joint state data asynchronously."""
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -16,14 +16,15 @@
+     "mcap-ros2-support>=0.5.5",
+     "mink>=0.0.13",
+     "mujoco>=3.3.5",
+-    "numpy==2.2.6",
++    # Keep compatibility with ROS Jazzy's system NumPy (1.26) when i2rt is
++    # embedded in a ROS application such as Prometheus.
++    "numpy>=1.26,<3",
+     "portal==3.7.3",
+     "pydantic>=2.0",
+     "pygame==2.6.1",
+     "python-can==4.5.0",
+     "pyyaml>=6.0.0",
+     "qpsolvers[quadprog]==4.7.1",
+-    "rerun-sdk>=0.32.2",
+     "ruckig==0.15.3",
+     "threadpoolctl==3.6.0",
+     "tyro>=1.0.0",
+@@ -37,6 +38,9 @@
+ ]
+ 
+ [project.optional-dependencies]
++rerun = [
++    "rerun-sdk>=0.32.2",
++]
+ dev = [
+     "pyright>=1.1.408",
+     "pytest>=8.4.0",
+--- /dev/null
++++ b/i2rt/motor_drivers/tests/test_dm_driver_shutdown.py
+@@ -0,0 +1,42 @@
++from __future__ import annotations
++
++import threading
++
++from i2rt.motor_drivers.dm_driver import DMChainCanInterface
++
++
++class _FakeCanInterface:
++    def __init__(self, worker_exited: threading.Event) -> None:
++        self.worker_exited = worker_exited
++        self.closed = False
++
++    def close(self) -> None:
++        assert self.worker_exited.is_set()
++        self.closed = True
++
++
++def test_close_joins_control_thread_before_closing_can() -> None:
++    worker_started = threading.Event()
++    worker_exited = threading.Event()
++    chain = DMChainCanInterface.__new__(DMChainCanInterface)
++    chain.running = True
++    chain.start_thread_flag = True
++    chain.motor_interface = _FakeCanInterface(worker_exited)
++
++    def run_control_loop() -> None:
++        worker_started.set()
++        while chain.running:
++            pass
++        worker_exited.set()
++
++    thread = threading.Thread(target=run_control_loop)
++    chain._control_thread = thread
++    thread.start()
++    assert worker_started.wait(timeout=1.0)
++
++    chain.close()
++
++    assert not thread.is_alive()
++    assert chain._control_thread is None
++    assert chain.start_thread_flag is False
++    assert chain.motor_interface.closed is True
+--- /dev/null
++++ b/i2rt/robots/tests/test_drag_tuning.py
+@@ -0,0 +1,109 @@
++"""Drag tuning assembly tests with the CAN interface and controller replaced by mocks."""
++
++import threading
++from types import SimpleNamespace
++from unittest.mock import MagicMock
++
++import numpy as np
++import pytest
++
++import i2rt.robots.get_robot as factory
++from i2rt.robots.motor_chain_robot import JointCommands, MotorChainRobot
++from i2rt.robots.utils import ArmType, GripperType, _load_arm_config
++
++
++@pytest.mark.parametrize("with_gripper", [False, True])
++def test_drag_overrides_reach_controller_without_changing_defaults(
++    monkeypatch: pytest.MonkeyPatch, with_gripper: bool
++) -> None:
++    n_joints = 7 if with_gripper else 6
++    chain = MagicMock()
++    chain.read_states.return_value = [SimpleNamespace(pos=0.0) for _ in range(n_joints)]
++    chain.motor_offset = np.zeros(n_joints)
++    monkeypatch.setattr(factory, "DMChainCanInterface", MagicMock(return_value=chain))
++    controller = MagicMock()
++    monkeypatch.setattr(factory, "MotorChainRobot", controller)
++    arm = ArmType.YAM_ULTRA_2
++    gripper = GripperType.LINEAR_4310 if with_gripper else GripperType.NO_GRIPPER
++    damping = [0.1, 0.1, 0.1, 0.2, 0.05, 0.05]
++    friction = [0.1, 0.1, 0.1, 0.1, 0.02, 0.02]
++    gravity = [1.0, 1.25, 1.1, 1.1, 1.2, 1.0]
++
++    factory.get_yam_robot(
++        arm_type=arm,
++        gripper_type=gripper,
++        grav_comp_kd=damping,
++        coulomb_friction=friction,
++        gravity_comp_factor=gravity,
++        use_coulomb_friction=True,
++    )
++    args = controller.call_args.kwargs
++    np.testing.assert_array_equal(args["grav_comp_kd"], damping + ([0.0] if with_gripper else []))
++    np.testing.assert_array_equal(args["coulomb_friction"], friction + ([0.0] if with_gripper else []))
++    np.testing.assert_array_equal(args["gravity_comp_factor"], gravity + ([1.0] if with_gripper else []))
++    assert args["zero_gravity_mode"] is True
++    assert args["use_coulomb_friction"] is True
++
++    # Re-entering teach mode must retain the override and release previous position gains.
++    robot = MotorChainRobot.__new__(MotorChainRobot)
++    robot.motor_chain = [None] * n_joints
++    robot._command_lock = threading.Lock()
++    robot._grav_comp_kd = args["grav_comp_kd"]
++    robot._commands = JointCommands.init_all_zero(n_joints)
++    robot._commands.kp[:] = 80.0
++    robot._commands.pos[:] = 0.5
++    robot.enter_gravity_comp_idle()
++    np.testing.assert_array_equal(robot._commands.kp, np.zeros(n_joints))
++    np.testing.assert_array_equal(robot._commands.torques, np.zeros(n_joints))
++    np.testing.assert_array_equal(robot._commands.kd, args["grav_comp_kd"])
++
++    # A later ordinary caller still gets the original arm configuration.
++    factory.get_yam_robot(arm_type=arm, gripper_type=gripper)
++    defaults = controller.call_args.kwargs
++    hw = _load_arm_config(arm)
++    for name in ("grav_comp_kd", "coulomb_friction", "gravity_comp_factor"):
++        np.testing.assert_array_equal(defaults[name][:6], getattr(hw, name))
++    assert defaults["use_coulomb_friction"] is False
++    np.testing.assert_array_equal(hw.grav_comp_kd, [0.1, 0.1, 0.1, 0.3, 0.05, 0.05])
++    np.testing.assert_array_equal(hw.coulomb_friction, [0.3, 0.3, 0.3, 0.3, 0.06, 0.06])
++
++
++@pytest.mark.parametrize("name", ["grav_comp_kd", "coulomb_friction", "gravity_comp_factor"])
++@pytest.mark.parametrize("values", [[0.1] * 5, [0.1] * 7, [-0.1] * 6, [np.nan] * 6, [np.inf] * 6])
++def test_invalid_drag_tuning_fails_before_opening_can(
++    monkeypatch: pytest.MonkeyPatch, name: str, values: list[float]
++) -> None:
++    can_factory = MagicMock(side_effect=AssertionError("must not open CAN"))
++    monkeypatch.setattr(factory, "DMChainCanInterface", can_factory)
++    with pytest.raises(ValueError, match=name):
++        factory.get_yam_robot(arm_type=ArmType.YAM_ULTRA_2, **{name: values})
++    can_factory.assert_not_called()
++
++
++def test_gripper_assist_torque_updates_only_the_gripper_direct_torque_term() -> None:
++    robot = MotorChainRobot.__new__(MotorChainRobot)
++    robot.motor_chain = [None] * 7
++    robot._gripper_index = 6
++    robot._command_lock = threading.Lock()
++    robot._commands = JointCommands.init_all_zero(7)
++    robot._commands.torques[:6] = np.arange(6, dtype=float)
++
++    robot.set_gripper_assist_torque(0.05)
++
++    np.testing.assert_array_equal(robot._commands.torques[:6], np.arange(6, dtype=float))
++    assert robot._commands.torques[6] == pytest.approx(0.05)
++    robot.set_gripper_assist_torque(0.0)
++    assert robot._commands.torques[6] == 0.0
++
++
++def test_gripper_assist_torque_rejects_missing_gripper_or_nonfinite_value() -> None:
++    robot = MotorChainRobot.__new__(MotorChainRobot)
++    robot._gripper_index = None
++    with pytest.raises(RuntimeError, match="no motor-driven gripper"):
++        robot.set_gripper_assist_torque(0.05)
++
++    robot._gripper_index = 6
++    robot._command_lock = threading.Lock()
++    robot._commands = JointCommands.init_all_zero(7)
++    with pytest.raises(ValueError, match="finite"):
++        robot.set_gripper_assist_torque(float("nan"))
+--- /dev/null
++++ b/i2rt/robots/tests/test_runtime_health.py
+@@ -0,0 +1,58 @@
++"""Hardware-free checks of cached feedback timestamps and runtime health."""
++
++import threading
++import time
++from types import SimpleNamespace
++from typing import Any
++
++import numpy as np
++import pytest
++
++from i2rt.motor_drivers.dm_driver import DMChainCanInterface
++from i2rt.robots.motor_chain_robot import MotorChainRobot
++
++
++def make_chain() -> Any:
++    chain = DMChainCanInterface.__new__(DMChainCanInterface)
++    chain.state_lock = threading.Lock()
++    chain.motor_list = [(1, "fixture")]
++    chain.state = [
++        SimpleNamespace(id=1, error_code="0x1", velocity=0.0, torque=0.0, temperature_rotor=25, temperature_mos=25)
++    ]
++    chain.motor_direction = np.ones(1)
++    chain.motor_offset = np.zeros(1)
++    chain.absolute_positions = np.zeros(1)
++    chain.running = True
++    chain.start_thread_flag = True
++    chain._control_thread = SimpleNamespace(is_alive=lambda: chain.running)
++    chain._feedback_time_unix_s = time.time() - 1
++    chain._feedback_monotonic_s = time.monotonic() - 1
++    return chain
++
++
++def test_read_states_preserves_feedback_time_when_cache_is_polled() -> None:
++    chain = make_chain()
++    first, second = chain.read_states(), chain.read_states()
++    assert first[0].timestamp == second[0].timestamp == chain._feedback_time_unix_s
++    assert chain.get_runtime_status()["state_age_s"] >= 1
++
++
++@pytest.mark.parametrize("failure", ["can", "controller", "stale_can", "stale_controller", "shutdown"])
++def test_runtime_status_detects_each_failure(failure: str) -> None:
++    chain = make_chain()
++    chain._feedback_monotonic_s = time.monotonic()
++    robot = MotorChainRobot.__new__(MotorChainRobot)
++    robot.motor_chain = chain
++    robot._server_thread = SimpleNamespace(is_alive=lambda: failure != "controller")
++    robot._stop_event = threading.Event()
++    robot._last_update_monotonic_s = time.monotonic()
++    if failure == "can":
++        chain.running = False
++    elif failure == "stale_can":
++        chain._feedback_monotonic_s -= 2
++    elif failure == "stale_controller":
++        robot._last_update_monotonic_s -= 2
++    elif failure == "shutdown":
++        robot._stop_event.set()
++    status = robot.get_runtime_status()
++    assert not status["running"] or status["state_age_s"] > 1

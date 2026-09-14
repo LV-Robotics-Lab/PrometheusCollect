@@ -1,0 +1,27 @@
+_target_: prometheus.nodes.robots.arx5.resolve_robot
+id: x5_2
+control_domain_id: 21
+sensor_domain_id: 22
+
+robot:
+  state_publish_hz: 120
+  action_space: abs_qpos
+  gripper_width_m: 0.082
+  gripper_open_readout: -3.4
+  left_gripper_open_readout: -3.40982
+  right_gripper_open_readout: -3.37739
+  can:
+    left: can1
+    right: can3
+
+cameras:
+  capture_hz: 30
+  capture_width: 640
+  capture_height: 480
+  publish_hz: 30
+  ir: true
+  prepub_resize: 1.0
+  serial_no:
+    base_0: "260422273830"
+    left_wrist_0: "412622272007"
+    right_wrist_0: "412622271819"

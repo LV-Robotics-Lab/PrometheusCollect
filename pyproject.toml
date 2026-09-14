@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prometheus-collect"
+version = "0.1.0"
+description = "Standalone YAM and ARX5 robot demonstration data collection"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "hydra-core>=1.3,<1.4",
+    "matplotlib>=3.8,<4",
+    "numpy>=1.26,<2.0",
+    "omegaconf>=2.3,<2.4",
+    "opencv-python-headless>=4.8,<4.12",
+]
+
+[project.optional-dependencies]
+realsense = ["pyrealsense2>=2.55,<3"]
+upload = ["modelscope-hub==0.4.2"]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+prometheus-collect = "prometheus.workflows.record_drag:main"
+prometheus-upload = "prometheus.workflows.upload_dataset:main"
+prometheus-episode = "prometheus.data.episode:main"
+
+[tool.setuptools.packages.find]
+include = ["prometheus*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+prometheus = ["configs/*.yaml", "configs/*/*.yaml", "tools/*.sh"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 119
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

@@ -1,0 +1,17 @@
+defaults:
+  - pedal_base
+
+name: event
+mode: owned
+input_source: pedal
+
+semantics:
+  0: record_start
+  1: record_stop
+  2: event_mark
+  3: capture_home
+  4: quit
+  5: return_home
+
+pedal:
+  confirm_presses: 2

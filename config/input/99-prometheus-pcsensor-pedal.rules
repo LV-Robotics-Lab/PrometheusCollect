@@ -1,0 +1,2 @@
+# Allow Prometheus users in plugdev to read the PCsensor FootSwitch keyboard interface.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="3553", ATTRS{idProduct}=="b001", ENV{ID_INPUT_KEYBOARD}=="1", GROUP="plugdev", MODE="0660", SYMLINK+="input/prometheus-pedal"

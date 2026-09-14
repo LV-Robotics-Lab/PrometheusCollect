@@ -1,0 +1,34 @@
+# 上传前必须显式指定本地目录和目标仓库。
+local_dir: ???
+repo_id: ???
+
+# 默认只列出范围；dry_run=false 才会联网上传。
+dry_run: true
+# 源目录的内容放到仓库根目录；也可指定如 raw/egg-stage2。
+path_in_repo: ""
+revision: master
+max_workers: 4
+commit_message: Upload Prometheus dataset
+
+# 原始采集 episode 必须有完整的保存清单且状态为 saved；不读取 PKL。
+# 若上传其他格式的数据，可显式关闭此检查。
+check_saved_episodes: true
+# 相对于 local_dir 的 glob，可排除额外文件。默认排除隐藏目录/文件、
+# 临时文件以及下载残留；MP4/PKL/JSON/PNG 均保留。
+ignore_patterns: [".*", "*/.*", "*.tmp", "*.part", "*.partial", "*.crdownload", "*.pyc", "__pycache__/*", "*/__pycache__/*"]
+
+# 使用已经建立的仓库，不新建仓库。
+create_repo: false
+# 以下两项仅在创建仓库时使用，不修改已有仓库的可见性或许可证。
+visibility: private
+license: Apache-2.0
+
+run:
+  id: ${now:%Y%m%d_%H%M%S_%f}
+  output_dir: outputs/modelscope_upload/${run.id}
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${run.output_dir}

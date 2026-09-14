@@ -1,0 +1,152 @@
+defaults:
+  - robot: yam
+  - task: default
+  - _self_
+
+user:
+  # Operators should normally only edit this block.
+  task_id: demo
+  collect_root: ${oc.env:PROMETHEUS_DATA_ROOT,${oc.env:HOME}/prometheus_data}
+  log_root: /tmp/prometheus_logs
+  max_episodes: 25
+
+task:
+  id: ${user.task_id}
+
+ros:
+  localhost_only: true
+
+robot:
+  robot:
+    state_publish_hz: 120
+  cameras:
+    ir: ${oc.select:robot.cameras.collect_ir,true}
+    prepub_resize: 1.0
+    qos: reliable
+    camera_info: false
+  tactile:
+    publish_difference: true
+    publish_raw: false
+
+run:
+  id: ${now:%Y%m%d_%H%M%S_%f}
+  output_dir: ${user.log_root}/collect/${task.id}/${run.id}
+  runtime_dir: ${run.output_dir}/runtime
+  wait_ready_timeout_s: 5.0
+
+hardware:
+  name: hardware
+  mode: owned
+  sensors: auto
+  streams: auto
+
+data:
+  name: data
+  mode: owned
+  history: 32
+  bridge:
+    enabled: true
+    name: ros_data
+    wait_all_streams: true
+    qos_depth: 10
+    sensor_qos: reliable
+    stamp_source: header
+    print_camera_timestamps: false
+    print_camera_rates: false
+  numpy:
+    enabled: false
+  recording:
+    enabled: true
+    output_dir: ${user.collect_root}/${task.id}
+    queue_size: 4096
+    fps: ${robot.cameras.publish_hz}
+    camera_encoder: libx265
+    default_event_value: null
+    enable_plots: true
+    joint_plot_ranges:
+      - [-3.14, 2.618]
+      - [-0.05, 3.50]
+      - [-0.10, 3.20]
+      - [-1.60, 1.55]
+      - [-1.57, 1.57]
+      - [-2.00, 2.00]
+      - [-0.005, 0.09]
+
+event:
+  name: event
+  mode: owned
+  input_source: pedal,tty
+  pedal:
+    device: /dev/input/prometheus-pedal
+    # ARX5-compatible confirmation: press the same pedal twice within 1 s.
+    confirm_presses: 2
+    confirm_window_s: 1.0
+    debounce_s: 0.25
+    poll_timeout_s: 0.02
+    pedal_map:
+      2: 0  # pedal 1: start
+      3: 1  # pedal 2: stop/save
+      4: 2  # pedal 3: mark
+      5: 4  # pedal 4: safe quit
+  tty:
+    confirm_presses: 1
+    confirm_window_s: 1.0
+    debounce_s: 0.25
+    poll_timeout_s: 0.02
+    key_map:
+      a: 0
+      b: 1
+      c: 2
+      h: 3
+      q: 4
+      r: 5
+  semantics:
+    0: record_start
+    1: record_stop
+    2: event_mark
+    3: capture_home
+    4: quit
+    5: return_home
+
+workflow:
+  max_episodes: ${user.max_episodes}
+  event_wait_timeout_s: 0.1
+  # After startup, keep the terminal focused on recording controls and status.
+  # Warnings/errors remain visible; turn this off for hardware diagnostics.
+  quiet_hardware_logs: true
+  reset_after_episode:
+    # Stopping an episode resets only recording state; it must not move the
+    # physical arms. Use the explicit keyboard Home-return control instead.
+    enabled: false
+    timeout_s: 30.0
+  home_capture:
+    enabled: true
+    path: ${user.collect_root}/yam_home.json
+  home_return:
+    # Never move the arms automatically after saving or while exiting. The
+    # driver releases torque on exit, so put the arms in a supported safe pose
+    # before quitting. Use `r` in the focused terminal for a deliberate,
+    # in-process return to the captured Home pose.
+    on_episode_stop: false
+    on_shutdown: false
+    on_manual_return: true
+    timeout_s: 15.0
+  preview:
+    enabled: true
+    mode: local
+    window: Prometheus Collection Preview
+    width: 1280
+    height: 720
+    fps: 20
+    always_on_top: true
+    stale_timeout_s: 1.0
+    host: 127.0.0.1
+    port: 7860
+    refresh_ms: 100
+  events: []
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/hydra/collect/${run.id}

@@ -1,0 +1,65 @@
+_target_: prometheus.nodes.robots.yam.resolve_drag_robot
+id: yam_drag
+control_domain_id: 21
+sensor_domain_id: 22
+
+robot:
+  # Follower-only gravity-compensation collection. No leader CAN interface is
+  # opened and no follower position targets are sent during a demonstration.
+  state_publish_hz: 120
+  action_space: abs_qpos
+  follower_arm: yam_ultra_2
+  follower_gripper: linear_4310
+  gripper_width_m: 0.096
+  # Fixed end-effector-body mass override in kg. null preserves the linear_4310
+  # model; this is an absolute replacement, not an added payload mass.
+  ee_mass: 0.70
+  connect_timeout_s: 15.0
+  state_timeout_s: 0.5
+  enable_auto_recovery: false
+  # Per-arm J1-J6, shared by both followers; excludes the gripper.
+  # null preserves the I2RT arm defaults. Overrides apply only to this run.
+  use_coulomb_friction: false
+  coulomb_friction: null  # Nm; requires use_coulomb_friction=true
+  # J1-J6 gravity-compensation idle damping. The gripper remains at zero idle
+  # damping and is not included in this six-value array.
+  grav_comp_kd: [0.05, 0.03, 0.02, 0.04, 0.04, 0.04]
+  gravity_comp_factor: null
+  # Bidirectional operator-motion assist for the motor-driven gripper.  It
+  # adds a tiny direct motor torque only after the jaws are already moving;
+  # at rest it commands 0 Nm and never holds a position.
+  # Set enabled=false to immediately return to the previous passive gripper.
+  # The torque setting is motor torque (not finger force) and is capped at
+  # 0.20 Nm in code. Check low-speed motion and release behavior before data
+  # collection when using values above 0.10 Nm.
+  gripper_motion_assist_enabled: true
+  gripper_motion_assist_torque_nm: 0.1
+  gripper_motion_assist_velocity_threshold_m_s: 0.02
+  # The installed follower grippers require torque opposite to the reported
+  # positive opening/closing velocity for physical same-direction assistance.
+  gripper_motion_assist_direction: -1
+  # Capture both follower poses after startup and return to that pose after
+  # every successfully saved drag episode. The return is a slow, bounded
+  # position trajectory; the followers immediately re-enter gravity-comp idle.
+  return_to_start_enabled: true
+  return_to_start_duration_s: 8.0
+  return_to_start_max_joint_delta_rad: 2.0
+  return_to_start_max_gripper_delta_m: 0.096
+  sim: false
+  follower_can:
+    left: can_follower_l
+    right: can_follower_r
+
+cameras:
+  capture_hz: 30
+  capture_width: 640
+  capture_height: 480
+  publish_hz: 30
+  collect_ir: false
+  ir: false
+  prepub_resize: 1.0
+  camera_info: false
+  serial_no:
+    base_0: "260322278344"
+    left_wrist_0: "260322279589"
+    right_wrist_0: "260322270559"
