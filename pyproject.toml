@@ -3,6 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
+license = { text = "Apache-2.0" }
+authors = [{ name = "LV Robotics Lab" }]
 name = "prometheus-collect"
 version = "0.1.0"
 description = "Standalone YAM and ARX5 robot demonstration data collection"
@@ -25,6 +27,9 @@ test = ["pytest>=8,<10"]
 prometheus-collect = "prometheus.workflows.record_drag:main"
 prometheus-upload = "prometheus.workflows.upload_dataset:main"
 prometheus-episode = "prometheus.data.episode:main"
+
+[tool.setuptools]
+license-files = ["LICENSE", "NOTICE"]
 
 [tool.setuptools.packages.find]
 include = ["prometheus*"]

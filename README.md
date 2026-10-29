@@ -86,3 +86,11 @@ YAM 动作为 14 维 `abs_qpos`，按左臂六关节、左夹爪、右臂六关�
 2026-09-14 的软件验证包含 **164 项数采测试通过、26 项 I2RT 测试通过**；另有 **3 项真实设备测试跳过**。测试范围及实机验证边界见[验证记录](docs/RELEASE_CHECKS.md)。
 
 完整测试、数据查看、可选上传及打包方式见[使用指南](docs/USAGE.md)。
+
+## 许可证
+
+本项目由 LV Robotics Lab 编写的框架代码采用 [Apache License 2.0](LICENSE)。
+Copyright 2026 LV Robotics Lab。署名信息见 [NOTICE](NOTICE)。
+
+第三方代码、子模块、依赖及资产保留各自的许可证和版权声明，
+不因本项目的许可证声明而变更。
